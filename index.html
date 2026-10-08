@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cyber Dash 2077 - Robô</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #0f0f19;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: sans-serif;
+            color: white;
+        }
+        canvas {
+            background-color: #0f0f19;
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.3);
+            touch-action: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="360" height="640"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Configuração de Áudio (Web Audio API)
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function tocarSom(tipo) {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            const agora = audioCtx.currentTime;
+
+            if (tipo === 'clique') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400, agora);
+                osc.frequency.exponentialRampToValueAtTime(800, agora + 0.05);
+                gain.gain.setValueAtTime(0.1, agora);
+                gain.gain.linearRampToValueAtTime(0.01, agora + 0.05);
+                osc.start(agora);
+                osc.stop(agora + 0.05);
+            } else if (tipo === 'moeda') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(987.77, agora);
+                osc.frequency.setValueAtTime(1318.51, agora + 0.08);
+                gain.gain.setValueAtTime(0.15, agora);
+                gain.gain.linearRampToValueAtTime(0.01, agora + 0.25);
+                osc.start(agora);
+                osc.stop(agora + 0.25);
+            } else if (tipo === 'bateu') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, agora);
+                osc.frequency.exponentialRampToValueAtTime(40, agora + 0.2);
+                gain.gain.setValueAtTime(0.3, agora);
+                gain.gain.linearRampToValueAtTime(0.01, agora + 0.2);
+                osc.start(agora);
+                osc.stop(agora + 0.2);
+            } else if (tipo === 'derrota') {
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(300, agora);
+                osc.frequency.linearRampToValueAtTime(100, agora + 0.4);
+                gain.gain.setValueAtTime(0.2, agora);
+                gain.gain.linearRampToValueAtTime(0.01, agora + 0.4);
+                osc.start(agora);
+                osc.stop(agora + 0.4);
+            }
+        }
+
+        let estado = "MENU";
+        let moedas_totais = 0;
+        let dificuldade = "Fácil";
+        let tipo_modo = "Clássico";
+
+        const chao_altura = 110;
+        const chao_y_pos = 640 - chao_altura;
+
+        let pos_x, pos_y, vel_y, no_chao, agachado;
+        let pontuacao, moedas, velocidade, obstaculos, lista_moedas, item_turbo;
+        let max_pulos, pulos_dados, tempo_turbo, fase;
+
+        const btn_dif_facil = { x: 20, y: 140, w: 95, h: 30 };
+        const btn_dif_medio = { x: 130, y: 140, w: 95, h: 30 };
+        const btn_dif_difi = { x: 240, y: 140, w: 95, h: 30 };
+
+        const btn_modo_classico = { x: 40, y: 230, w: 130, h: 35 };
+        const btn_modo_fases = { x: 190, y: 230, w: 130, h: 35 };
+
+        const btn_play = { x: 60, y: 420, w: 240, h: 55 };
+        const btn_sair = { x: 80, y: 500, w: 200, h: 40 };
+
+        const btn_agach = { x: 20, y: 530, w: 150, h: 90 };
+        const btn_pulo = { x: 190, y: 530, w: 150, h: 90 };
+
+        let toque_agachar = false;
+
+        function gerar_obstaculo(x_inicio, modo, fase_atual) {
+            let tipo;
+            if (modo === "Clássico") {
+                tipo = Math.random() < 0.5 ? 'chao' : 'teto';
+            } else {
+                let tipos = fase_atual === 1 ? ['chao', 'teto'] : ['chao', 'teto', 'movel', 'aereo'];
+                tipo = tipos[Math.floor(Math.random() * tipos.length)];
+            }
+            
+            let w = 30, h = 40, y = chao_y_pos - 40;
+            if (tipo === 'chao') {
+                w = 30; h = 40; y = chao_y_pos - h;
+            } else if (tipo === 'teto') {
+                w = 50; h = 45; y = chao_y_pos - 75;
+            } else if (tipo === 'aereo') {
+                w = 40; h = 30; y = chao_y_pos - 150;
+            } else {
+                w = 50; h = 25; y = chao_y_pos - 100;
+            }
+            
+            return {
+                x: x_inicio,
+                y_base: y,
+                y: y,
+                w: w,
+                h: h,
+                tipo: tipo,
+                angulo: Math.random() * Math.PI * 2,
+                vel_movimento: 0.04 + Math.random() * 0.04
+            };
+        }
+
+        function iniciar_partida() {
+            pos_x = 50;
+            pos_y = chao_y_pos - 45;
+            vel_y = 0;
+            no_chao = true;
+            agachado = false;
+            
+            max_pulos = 3;
+            pulos_dados = 0;
+            tempo_turbo = 0;
+            
+            pontuacao = 0;
+            moedas = 0;
+            fase = 1;
+            
+            if (dificuldade === "Fácil") velocidade = 4.5;
+            else if (dificuldade === "Médio") velocidade = 6.5;
+            else velocidade = 8.5;
+            
+            obstaculos = [
+                gerar_obstaculo(360 + 150, tipo_modo, fase),
+                gerar_obstaculo(360 + 420, tipo_modo, fase)
+            ];
+            
+            lista_moedas = [
+                { x: 360 + 200, y: chao_y_pos - 50 },
+                { x: 360 + 450, y: chao_y_pos - 130 }
+            ];
+            
+            item_turbo = { x: 360 + 700, y: chao_y_pos - 100, ativo: true };
+        }
+
+        function rectCollide(r1, r2) {
+            return r1.x < r2.x + r2.w && r1.x + r1.w > r2.x &&
+                   r1.y < r2.y + r2.h && r1.y + r1.h > r2.y;
+        }
+
+        function mouseInRect(mx, my, rect) {
+            return mx >= rect.x && mx <= rect.x + rect.w && my >= rect.y && my <= rect.y + rect.h;
+        }
+
+        canvas.addEventListener('pointerdown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mx = (e.clientX - rect.left) * (360 / rect.width);
+            const my = (e.clientY - rect.top) * (640 / rect.height);
+
+            if (estado === "MENU") {
+                if (mouseInRect(mx, my, btn_dif_facil)) { dificuldade = "Fácil"; tocarSom('clique'); }
+                if (mouseInRect(mx, my, btn_dif_medio)) { dificuldade = "Médio"; tocarSom('clique'); }
+                if (mouseInRect(mx, my, btn_dif_difi)) { dificuldade = "Difícil"; tocarSom('clique'); }
+                if (mouseInRect(mx, my, btn_modo_classico)) { tipo_modo = "Clássico"; tocarSom('clique'); }
+                if (mouseInRect(mx, my, btn_modo_fases)) { tipo_modo = "Fases"; tocarSom('clique'); }
+                if (mouseInRect(mx, my, btn_play)) { tocarSom('clique'); iniciar_partida(); estado = "JOGO"; }
+                if (mouseInRect(mx, my, btn_sair)) { tocarSom('clique'); window.close(); }
+            } else if (estado === "JOGO") {
+                if (mouseInRect(mx, my, btn_pulo)) {
+                    agachado = false;
+                    if (no_chao) {
+                        vel_y = -13;
+                        no_chao = false;
+                        pulos_dados = 0;
+                    } else if (pulos_dados < max_pulos) {
+                        vel_y = -11;
+                        pulos_dados++;
+                    }
+                }
+                if (mouseInRect(mx, my, btn_agach)) {
+                    toque_agachar = true;
+                }
+            } else if (estado === "GAME_OVER") {
+                if (mouseInRect(mx, my, btn_play)) { tocarSom('clique'); estado = "MENU"; }
+            }
+        });
+
+        canvas.addEventListener('pointerup', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mx = (e.clientX - rect.left) * (360 / rect.width);
+            const my = (e.clientY - rect.top) * (640 / rect.height);
+            if (estado === "JOGO" && mouseInRect(mx, my, btn_agach)) {
+                toque_agachar = false;
+            }
+        });
+
+        function atualizar() {
+            if (estado === "JOGO") {
+                velocidade += 0.001;
+                pontuacao += 1;
+
+                if (tipo_modo === "Fases") {
+                    if (pontuacao < 400) fase = 1;
+                    else if (pontuacao < 900) fase = 2;
+                    else fase = 3;
+                } else {
+                    fase = 1;
+                }
+
+                if (tempo_turbo > 0) {
+                    tempo_turbo--;
+                    max_pulos = 5;
+                } else {
+                    max_pulos = 3;
+                }
+
+                agachado = toque_agachar && no_chao;
+                if (toque_agachar && !no_chao) {
+                    vel_y += 1.5;
+                }
+
+                let w_p = agachado ? 45 : 30;
+                let h_p = agachado ? 22 : 45;
+                let chao_y = chao_y_pos - h_p;
+
+                vel_y += 0.8;
+                pos_y += vel_y;
+
+                if (pos_y >= chao_y) {
+                    pos_y = chao_y;
+                    vel_y = 0;
+                    no_chao = true;
+                    pulos_dados = 0;
+                }
+
+                let player = { x: pos_x, y: pos_y, w: w_p, h: h_p };
+
+                for (let m of lista_moedas) {
+                    m.x -= velocidade;
+                    if (rectCollide(player, { x: m.x, y: m.y, w: 20, h: 20 })) {
+                        moedas++;
+                        moedas_totais++;
+                        tocarSom('moeda');
+                        m.x = 360 + Math.floor(Math.random() * 250) + 150;
+                        m.y = chao_y_pos - [50, 120, 170][Math.floor(Math.random() * 3)];
+                    } else if (m.x < -30) {
+                        m.x = 360 + Math.floor(Math.random() * 200) + 100;
+                    }
+                }
+
+                if (item_turbo.ativo) {
+                    item_turbo.x -= velocidade;
+                    if (rectCollide(player, { x: item_turbo.x, y: item_turbo.y, w: 25, h: 25 })) {
+                        tempo_turbo = 350;
+                        item_turbo.ativo = false;
+                    } else if (item_turbo.x < -30) {
+                        item_turbo.x = 360 + Math.floor(Math.random() * 500) + 500;
+                        item_turbo.ativo = true;
+                    }
+                }
+
+                for (let obs of obstaculos) {
+                    obs.x -= velocidade;
+                    if (obs.tipo === 'movel') {
+                        obs.angulo += obs.vel_movimento;
+                        obs.y = obs.y_base + Math.sin(obs.angulo) * 60;
+                    }
+
+                    if (rectCollide(player, { x: obs.x, y: obs.y, w: obs.w, h: obs.h })) {
+                        tocarSom('bateu');
+                        tocarSom('derrota');
+                        estado = "GAME_OVER";
+                    }
+
+                    if (obs.x < -obs.w) {
+                        let outro_obs_x = Math.max(...obstaculos.map(o => o.x));
+                        let espacamento_extra = dificuldade === "Fácil" ? Math.floor(Math.random() * 120) + 100 : Math.floor(Math.random() * 70) + 30;
+                        let novo_x = Math.max(360 + 50, outro_obs_x + 220 + espacamento_extra);
+                        let novo_obs = gerar_obstaculo(novo_x, tipo_modo, fase);
+                        Object.assign(obs, novo_obs);
+                    }
+                }
+            }
+        }
+
+        function desenhar() {
+            ctx.fillStyle = "#0f0f19";
+            ctx.fillRect(0, 0, 360, 640);
+
+            if (estado === "MENU") {
+                ctx.fillStyle = "#00f3ff";
+                ctx.font = "bold 24px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText("CYBER DASH: ROBÔ", 180, 45);
+
+                ctx.fillStyle = "#ffd700";
+                ctx.font = "16px sans-serif";
+                ctx.fillText(`Moedas Salvas: ${moedas_totais}`, 180, 80);
+
+                ctx.fillStyle = "white";
+                ctx.font = "13px sans-serif";
+                ctx.textAlign = "left";
+                ctx.fillText("Dificuldade:", 20, 125);
+
+                ['Fácil', 'Médio', 'Difícil'].forEach((dif, idx) => {
+                    let rect = [btn_dif_facil, btn_dif_medio, btn_dif_difi][idx];
+                    ctx.fillStyle = dificuldade === dif ? "#00f3ff" : "#3c3c50";
+                    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+                    ctx.fillStyle = "white";
+                    ctx.textAlign = "center";
+                    ctx.fillText(dif, rect.x + rect.w/2, rect.y + 20);
+                });
+
+                ctx.textAlign = "left";
+                ctx.fillText("Modo de Jogo:", 20, 215);
+
+                ['Clássico', 'Fases'].forEach((mod, idx) => {
+                    let rect = [btn_modo_classico, btn_modo_fases][idx];
+                    ctx.fillStyle = tipo_modo === mod ? "#39ff14" : "#3c3c50";
+                    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+                    ctx.fillStyle = "white";
+                    ctx.textAlign = "center";
+                    ctx.fillText(mod, rect.x + rect.w/2, rect.y + 22);
+                });
+
+                ctx.fillStyle = "#ff0080";
+                ctx.textAlign = "left";
+                ctx.fillText("Herói: Robô | Sons Ativados", 20, 310);
+
+                ctx.fillStyle = "#39ff14";
+                ctx.fillRect(btn_play.x, btn_play.y, btn_play.w, btn_play.h);
+                ctx.fillStyle = "#0f0f19";
+                ctx.font = "bold 22px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText("JOGAR", btn_play.x + btn_play.w/2, btn_play.y + 34);
+
+                ctx.fillStyle = "#ff0055";
+                ctx.fillRect(btn_sair.x, btn_sair.y, btn_sair.w, btn_sair.h);
+                ctx.fillStyle = "white";
+                ctx.font = "16px sans-serif";
+                ctx.fillText("SAIR DO JOGO", btn_sair.x + btn_sair.w/2, btn_sair.y + 25);
+
+            } else if (estado === "JOGO") {
+                ctx.fillStyle = "#39ff14";
+                ctx.fillRect(0, chao_y_pos, 360, chao_altura);
+
+                let w_p = agachado ? 45 : 30;
+                let h_p = agachado ? 22 : 45;
+                ctx.fillStyle = tempo_turbo > 0 ? "#ff8000" : "#00f3ff";
+                ctx.fillRect(pos_x, pos_y, w_p, h_p);
+
+                for (let obs of obstaculos) {
+                    if (obs.tipo === 'chao') ctx.fillStyle = "#ff0055";
+                    else if (obs.tipo === 'teto') ctx.fillStyle = "#ff0080";
+                    else if (obs.tipo === 'aereo') ctx.fillStyle = "#ffd700";
+                    else ctx.fillStyle = "#b400ff";
+                    ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+                }
+
+                for (let m of lista_moedas) {
+                    ctx.fillStyle = "#ffd700";
+                    ctx.beginPath();
+                    ctx.arc(m.x, m.y, 8, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                if (item_turbo.ativo) {
+                    ctx.fillStyle = "#ff8000";
+                    ctx.fillRect(item_turbo.x, item_turbo.y, 25, 25);
+                }
+
+                ctx.fillStyle = "#3c3c50";
+                ctx.fillRect(btn_pulo.x, btn_pulo.y, btn_pulo.w, btn_pulo.h);
+                ctx.fillRect(btn_agach.x, btn_agach.y, btn_agach.w, btn_agach.h);
+
+                ctx.fillStyle = "white";
+                ctx.font = "14px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText("PULAR / PLANAR", btn_pulo.x + btn_pulo.w/2, btn_pulo.y + 50);
+                ctx.fillText("AGACHAR", btn_agach.x + btn_agach.w/2, btn_agach.y + 50);
+
+                ctx.textAlign = "left";
+                ctx.font = "13px sans-serif";
+                ctx.fillText(`PTS: ${pontuacao}`, 20, 25);
+                if (tipo_modo === "Fases") {
+                    ctx.fillStyle = "#ff0080";
+                    ctx.fillText(`FASE ${fase}`, 120, 25);
+                }
+                ctx.fillStyle = "#ffd700";
+                ctx.fillText(`MOEDAS: ${moedas}`, 260, 25);
+
+            } else if (estado === "GAME_OVER") {
+                ctx.fillStyle = "#ff0055";
+                ctx.font = "bold 26px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText("ROBÔ DESTRUÍDO!", 180, 195);
+
+                ctx.fillStyle = "white";
+                ctx.font = "18px sans-serif";
+                ctx.fillText(`Pontos Finais: ${pontuacao}`, 180, 250);
+                ctx.fillStyle = "#ffd700";
+                ctx.fillText(`Moedas: ${moedas}`, 180, 280);
+
+                ctx.fillStyle = "#39ff14";
+                ctx.fillRect(btn_play.x, btn_play.y, btn_play.w, btn_play.h);
+                ctx.fillStyle = "#0f0f19";
+                ctx.font = "bold 18px sans-serif";
+                ctx.fillText("JOGAR NOVAMENTE", btn_play.x + btn_play.w/2, btn_play.y + 33);
+            }
+        }
+
+        function loop() {
+            atualizar();
+            desenhar();
+            requestAnimationFrame(loop);
+        }
+
+        loop();
+    </script>
+</body>
+</html>
